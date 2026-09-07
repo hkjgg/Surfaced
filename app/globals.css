@@ -1,0 +1,231 @@
+@import "tailwindcss";
+
+/* ==========================================================================
+   Surfaced design tokens
+
+   One source of truth. Tailwind v4 is CSS-first: every custom property in
+   @theme generates the matching utility (--color-critical -> text-critical,
+   bg-critical, border-critical). There is no tailwind.config.ts.
+
+   Intent: a serious engineering tool. Terminal and observability dashboard,
+   not marketing site. Restraint over decoration.
+   ========================================================================== */
+
+@theme {
+  /* ---- surfaces --------------------------------------------------------
+     Near-black with a cool cast, never #000. Elevation on a dark UI is
+     carried by surface lightness and a hairline border first; shadow second. */
+  --color-bg: #0a0b0d;
+  --color-surface: #111316;
+  --color-raised: #181b1f;
+  --color-overlay: #1e2227;
+  --color-border: #24282e;
+  --color-border-strong: #343a42;
+
+  /* ---- foreground ------------------------------------------------------
+     Every value clears WCAG AA (4.5:1) on --color-bg. Verified numerically,
+     not by eye. fg 16.3:1 / muted 7.9:1 / subtle 6.9:1. */
+  --color-fg: #e8eaed;
+  --color-fg-muted: #a8b0ba;
+  --color-fg-subtle: #8b939e;
+  --color-fg-invert: #0a0b0d;
+
+  /* ---- accent ----------------------------------------------------------
+     ONE accent, used sparingly: focus rings, the primary action, active
+     state, and the score readout. Deliberately outside the severity ramp so
+     emphasis is never mistaken for a finding. 6.2:1 on --color-bg and 5.1:1
+     on the lightest surface, so it stays AA as text anywhere; the same ratio
+     applies to --color-fg-invert text on an accent fill. --color-accent-dim
+     is the pressed fill and clears AA against fg-invert too. */
+  --color-accent: #8e81f7;
+  --color-accent-dim: #7a6df4;
+  --color-accent-wash: #8e81f71f;
+  --color-accent-edge: #8e81f74d;
+
+  /* ---- severity --------------------------------------------------------
+     Colour is the SECONDARY channel. The primary channel is the rank meter
+     and the uppercase label rendered by <Badge> — see lib/severity.ts. The
+     scale must stay readable in greyscale and under any colour-vision
+     deficiency. Each hue clears AA as text on --color-bg. */
+  --color-critical: #f2555a;
+  --color-critical-wash: #f2555a1f;
+  --color-critical-edge: #f2555a4d;
+
+  --color-high: #ff8a3d;
+  --color-high-wash: #ff8a3d1f;
+  --color-high-edge: #ff8a3d4d;
+
+  --color-medium: #e3b341;
+  --color-medium-wash: #e3b3411f;
+  --color-medium-edge: #e3b3414d;
+
+  --color-low: #58a6ff;
+  --color-low-wash: #58a6ff1f;
+  --color-low-edge: #58a6ff4d;
+
+  --color-pass: #3fb950;
+  --color-pass-wash: #3fb9501f;
+  --color-pass-edge: #3fb9504d;
+
+  /* ---- type ------------------------------------------------------------
+     Mono is not decoration. It carries every machine-readable string:
+     domains, DNS records, HTTP headers, metrics, technical labels, the
+     wordmark. Sans carries prose. */
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, "SF Mono",
+    Menlo, Consolas, "Liberation Mono", monospace;
+
+  /* Dense, tool-like scale. Base is 15px, not 16px. */
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: 1.45;
+  --text-xs: 0.75rem;
+  --text-xs--line-height: 1.5;
+  --text-sm: 0.8125rem;
+  --text-sm--line-height: 1.55;
+  --text-base: 0.9375rem;
+  --text-base--line-height: 1.6;
+  --text-lg: 1.0625rem;
+  --text-lg--line-height: 1.55;
+  --text-xl: 1.25rem;
+  --text-xl--line-height: 1.4;
+  --text-2xl: 1.5rem;
+  --text-2xl--line-height: 1.3;
+  --text-3xl: clamp(1.75rem, 1.45rem + 1.5vw, 2.25rem);
+  --text-3xl--line-height: 1.2;
+  --text-4xl: clamp(2.125rem, 1.7rem + 2.1vw, 3rem);
+  --text-4xl--line-height: 1.12;
+
+  --tracking-display: -0.022em;
+  --tracking-tight: -0.011em;
+  --tracking-label: 0.08em;
+
+  /* ---- spacing ---------------------------------------------------------
+     Tailwind's 4px base is kept; these name the page rhythm so the shell and
+     future report sections stay in step. */
+  --spacing-gutter: 1.25rem;
+  --spacing-section: 4rem;
+  --spacing-section-lg: 6rem;
+
+  /* ---- radii -----------------------------------------------------------
+     Tight. Tight corners read as tooling; soft corners read as SaaS. */
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+  --radius-xl: 14px;
+
+  /* ---- elevation ------------------------------------------------------- */
+  --shadow-1: 0 1px 2px 0 rgb(0 0 0 / 0.45);
+  --shadow-2: 0 2px 8px -2px rgb(0 0 0 / 0.55), 0 1px 3px -1px rgb(0 0 0 / 0.4);
+  --shadow-3: 0 12px 32px -8px rgb(0 0 0 / 0.65),
+    0 2px 8px -2px rgb(0 0 0 / 0.5);
+
+  /* ---- motion ----------------------------------------------------------
+     Minimal by design, and fully disabled under prefers-reduced-motion. */
+  --animate-breathe: surfaced-breathe 1.8s ease-in-out infinite;
+
+  @keyframes surfaced-breathe {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.45;
+    }
+  }
+}
+
+/* ==========================================================================
+   Base layer
+   ========================================================================== */
+
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--color-bg);
+    color: var(--color-fg);
+    font-family: var(--font-sans);
+    font-size: var(--text-base);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Pre-set the outline colour on everything. Tailwind's `transition-colors`
+     includes outline-color, so without this the focus ring animates in from
+     currentColor over the transition duration instead of appearing at once.
+     A focus ring must be instant. */
+  *,
+  ::before,
+  ::after {
+    outline-color: var(--color-accent);
+  }
+
+  /* Focus is never removed, only styled. The ring uses the accent, which
+     clears 3:1 against every surface token. */
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+    border-radius: var(--radius-xs);
+  }
+
+  ::selection {
+    background-color: var(--color-accent-edge);
+    color: var(--color-fg);
+  }
+
+  code,
+  kbd,
+  samp,
+  pre {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Domains, record values and metrics are compared column-to-column. */
+  [data-mono] {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+/* ==========================================================================
+   Utilities
+   ========================================================================== */
+
+/* The recurring micro-label: uppercase mono, wide tracking. Used for card
+   eyebrows, severity labels, table headers, and the header tag. */
+@utility label {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  line-height: var(--text-2xs--line-height);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+
+/* Page container. Mobile-first: the gutter holds at 375px. */
+@utility shell {
+  width: 100%;
+  max-width: 68rem;
+  margin-inline: auto;
+  padding-inline: var(--spacing-gutter);
+}
