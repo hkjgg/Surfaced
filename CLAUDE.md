@@ -41,6 +41,25 @@ ownership is not verification, and an unverified checkbox is not consent.
 The product copy in the footer states this to users. Keep the code and the
 promise in agreement.
 
+### The corollary: never report a guess as a fact
+
+A scanner that returns plausible-looking wrong answers is worse than no
+scanner, because people act on it. So a check that cannot reach its data
+source returns `error` and is excluded from the score — it never falls back to
+a clean result. Specifically:
+
+- `dnssec.unknown` is not "unsigned" — a failed DS lookup is not a fact about
+  the domain.
+- Finding no DKIM key at the probed selectors is not "DKIM is missing".
+  Selectors are not enumerable from DNS, so absence proves nothing.
+- An empty `p=` in a DKIM record is a **revoked** key (RFC 6376 §3.6.1), not a
+  published one.
+- Security headers are graded only from a successful response. A WAF's 400 or
+  a 404 page routinely lacks the headers the real site sends.
+
+Each of these was a real bug found during verification, and each would have
+produced a confident, plausible, wrong answer.
+
 ---
 
 ## 2. Stack
@@ -68,6 +87,8 @@ npm run build            # production build (must pass with NO env vars)
 npm run lint             # eslint
 npm run typecheck        # tsc --noEmit
 npm run check:contrast   # assert the palette still clears WCAG AA
+npm run verify:ssrf      # SSRF boundary battery (pure logic + DNS)
+npm run verify:scanner   # drive POST /api/scan against a running server
 ```
 
 ---
@@ -80,8 +101,9 @@ components/ui/        presentational primitives. No data fetching, no scanner
                       imports, no business logic. If it needs to know what a
                       DNS record is, it does not belong here.
 components/layout/    app shell: header, footer, wordmark.
-lib/scanner/          RESERVED, currently empty. The scanning engine goes here.
-                      See lib/scanner/README.md.
+lib/scanner/          the scanning engine: one module per check, plus
+                      orchestrate.ts, score.ts, validate.ts and types.ts.
+                      internal/ holds shared plumbing. See its README.
 lib/supabase/         env validation + client factories.
 lib/severity.ts       the severity scale. Single source of truth.
 lib/cn.ts             className merge helper.
@@ -121,7 +143,11 @@ Two rules follow from this:
    return `null` when unconfigured, so importing them during a build is inert.
    Callers must handle `null`; there is no non-null variant.
 
-Both Supabase variables are optional. `.env.example` documents them.
+All three variables are optional: the two Supabase ones, and `HIBP_API_KEY`
+for the exposure check. `.env.example` documents them. With no HIBP key the
+exposure check returns `not_configured`, which is excluded from scoring — it
+must never be reported as a pass, because "we did not look" and "we looked and
+it was clean" are different facts.
 
 ---
 
