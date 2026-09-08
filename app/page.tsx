@@ -14,7 +14,8 @@ export default function HomePage() {
       <div className="mt-8">
         <DomainField />
         <p id="domain-help" className="mt-2.5 text-xs text-fg-subtle">
-          Scanning isn&rsquo;t wired up yet.
+          Six passive checks against public records. Nothing is sent to your
+          systems beyond one ordinary HTTPS request.
         </p>
       </div>
     </div>

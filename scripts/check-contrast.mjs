@@ -53,5 +53,16 @@ check("border-strong on bg", ratio(tokens["border-strong"], tokens.bg), 1.4);
 console.log("\n--- fills: fg-invert text on accent/severity fill (min 4.5) ---");
 for (const t of signal) check(`fg-invert on ${t} fill`, ratio(tokens["fg-invert"], tokens[t]), 4.5);
 
+// The score gauge draws its arc in a severity colour on top of the gauge
+// track, which is --color-border. That arc is a meaningful graphic, not
+// decoration — it is how the verdict reads at a glance — so WCAG 1.4.11
+// applies to it at 3:1, both against the track it sits on and against the
+// page behind it.
+console.log("\n--- non-text: score gauge arc vs its track and the page (min 3.0) ---");
+for (const t of ["critical", "high", "medium", "low", "pass"]) {
+  check(`${t} arc on gauge track`, ratio(tokens[t], tokens.border), 3);
+  check(`${t} arc on surface`, ratio(tokens[t], tokens.surface), 3);
+}
+
 console.log(fail === 0 ? "\nALL CONTRAST CHECKS PASS" : `\n${fail} FAILURE(S)`);
 process.exit(fail === 0 ? 0 : 1);

@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "check:contrast": "node scripts/check-contrast.mjs",
     "verify:scanner": "node scripts/verify-scanner.mjs",
-    "verify:ssrf": "tsx scripts/verify-ssrf.mts"
+    "verify:ssrf": "tsx scripts/verify-ssrf.mts",
+    "verify:report": "tsx scripts/verify-report.mts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.7.0",
