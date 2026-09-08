@@ -3,11 +3,25 @@
  *
  * The scanner's only public surface. Validates input, runs the six passive
  * checks, and returns the typed report.
+ *
+ * Two response shapes, chosen by content negotiation:
+ *
+ *   - `Accept: text/event-stream` → Server-Sent Events, one `check` event as
+ *     each check settles, then a final `report` event.
+ *   - anything else → the single JSON report, unchanged.
+ *
+ * The JSON form is the original contract and stays byte-identical, so existing
+ * callers — including scripts/verify-scanner.mjs — keep working. Streaming is
+ * additive.
  */
 
 import { NextResponse } from "next/server";
 
-import { scanHostname } from "@/lib/scanner/orchestrate";
+import {
+  replayEvents,
+  scanHostnameStream,
+  type ScanEvent,
+} from "@/lib/scanner/orchestrate";
 import type { ScanReport } from "@/lib/scanner/types";
 import { validateDomain } from "@/lib/scanner/validate";
 
@@ -124,7 +138,61 @@ function errorResponse(
   return NextResponse.json({ error: { code, message } }, { status, headers });
 }
 
-export async function POST(request: Request): Promise<NextResponse> {
+function wantsEventStream(request: Request): boolean {
+  return (request.headers.get("accept") ?? "").includes("text/event-stream");
+}
+
+/**
+ * Wrap an event source in an SSE response.
+ *
+ * Errors are reported as a final `error` event rather than a dropped
+ * connection, so a client can tell "the scan failed" apart from "the network
+ * died" — which are different things and want different messages.
+ */
+function eventStreamResponse(
+  events: () => AsyncIterable<ScanEvent>,
+  extraHeaders: Record<string, string>,
+): Response {
+  const encoder = new TextEncoder();
+
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const send = (name: string, payload: unknown) => {
+        controller.enqueue(
+          encoder.encode(`event: ${name}\ndata: ${JSON.stringify(payload)}\n\n`),
+        );
+      };
+
+      try {
+        for await (const event of events()) {
+          send(event.type, event);
+        }
+      } catch (error) {
+        send("error", {
+          code: "scan_failed",
+          message:
+            error instanceof Error ? error.message : "The scan failed unexpectedly.",
+        });
+      } finally {
+        controller.close();
+      }
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      "content-type": "text/event-stream; charset=utf-8",
+      // no-transform matters as much as no-store: a compressing proxy will
+      // happily buffer the whole stream, which turns per-check events back
+      // into one delivery at the end.
+      "cache-control": "no-store, no-transform",
+      "x-accel-buffering": "no",
+      ...extraHeaders,
+    },
+  });
+}
+
+export async function POST(request: Request): Promise<Response> {
   const now = Date.now();
 
   const limit = checkRateLimit(clientKey(request), now);
@@ -164,27 +232,55 @@ export async function POST(request: Request): Promise<NextResponse> {
 
   const { hostname } = validation;
 
+  const streaming = wantsEventStream(request);
   const cached = readCache(hostname, now);
+
   if (cached) {
-    return NextResponse.json(cached, {
-      headers: {
-        "x-cache": "hit",
-        "x-ratelimit-limit": String(RATE_LIMIT_MAX),
-        "x-ratelimit-remaining": String(limit.remaining),
-      },
-    });
+    const headers = {
+      "x-cache": "hit",
+      "x-ratelimit-limit": String(RATE_LIMIT_MAX),
+      "x-ratelimit-remaining": String(limit.remaining),
+    };
+
+    if (!streaming) return NextResponse.json(cached, { headers });
+
+    // Replay the events the cached scan produced. The start event carries
+    // cached: true so the client says so instead of implying it just measured
+    // these timings.
+    return eventStreamResponse(async function* () {
+      yield* replayEvents(cached);
+    }, headers);
   }
 
-  const report = await scanHostname(hostname, { signal: request.signal });
+  const headers = {
+    "x-cache": "miss",
+    "x-ratelimit-limit": String(RATE_LIMIT_MAX),
+    "x-ratelimit-remaining": String(limit.remaining),
+  };
+
+  if (streaming) {
+    return eventStreamResponse(async function* () {
+      for await (const event of scanHostnameStream(hostname, {
+        signal: request.signal,
+      })) {
+        if (event.type === "report") writeCache(hostname, event.report, Date.now());
+        yield event;
+      }
+    }, headers);
+  }
+
+  let report: ScanReport | null = null;
+  for await (const event of scanHostnameStream(hostname, { signal: request.signal })) {
+    if (event.type === "report") report = event.report;
+  }
+
+  if (!report) {
+    return errorResponse(500, "scan_failed", "The scan produced no report.");
+  }
+
   writeCache(hostname, report, now);
 
   // 200 even when some checks failed: the report carries per-check status and
   // marks the score partial, which is more useful than an opaque 5xx.
-  return NextResponse.json(report, {
-    headers: {
-      "x-cache": "miss",
-      "x-ratelimit-limit": String(RATE_LIMIT_MAX),
-      "x-ratelimit-remaining": String(limit.remaining),
-    },
-  });
+  return NextResponse.json(report, { headers });
 }

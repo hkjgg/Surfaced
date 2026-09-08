@@ -134,6 +134,35 @@
       opacity: 0.45;
     }
   }
+
+  /* A finding arriving in the list. Staggered by an inline animation-delay so
+     a long list settles in sequence rather than snapping in as a block. */
+  --animate-rise: surfaced-rise 260ms cubic-bezier(0.2, 0.7, 0.3, 1) backwards;
+
+  @keyframes surfaced-rise {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  /* The score gauge filling once. Both ends come from custom properties the
+     component sets, so the resting value is the real score and the animation
+     only controls how it gets there. */
+  --animate-gauge: surfaced-gauge 900ms cubic-bezier(0.2, 0.7, 0.3, 1) forwards;
+
+  @keyframes surfaced-gauge {
+    from {
+      stroke-dashoffset: var(--gauge-empty);
+    }
+    to {
+      stroke-dashoffset: var(--gauge-offset);
+    }
+  }
 }
 
 /* ==========================================================================
@@ -204,6 +233,12 @@
       animation-iteration-count: 1 !important;
       transition-duration: 0.01ms !important;
       scroll-behavior: auto !important;
+      /* Zeroing the duration is not enough on its own: a staggered list sets
+         an animation-delay per item, and leaving that in place would still
+         drip the content in — silently, with no motion to explain the wait.
+         Reduced motion has to mean the content is simply there. */
+      animation-delay: 0ms !important;
+      transition-delay: 0ms !important;
     }
   }
 }

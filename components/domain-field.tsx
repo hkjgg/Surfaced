@@ -1,21 +1,31 @@
 "use client";
 
-import type { FormEvent } from "react";
+import { type FormEvent, useState } from "react";
+import { useRouter } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
 /**
- * The home page's domain field. Inert by design — scanning does not exist yet.
+ * The domain field. Submitting navigates to the report for that domain.
  *
- * It is a real <form> with a real <label> rather than a decorative div, so the
- * keyboard and screen-reader behaviour is correct from the start and the
- * scanner step only has to replace the submit handler.
+ * Validation here is deliberately minimal — empty input only. `validate.ts` on
+ * the server is the real boundary, and it does considerably more than a
+ * regex: public-suffix checks, IP-literal rejection, and the SSRF guards. A
+ * second, weaker copy in the browser would be another thing to keep in step,
+ * and would eventually disagree with the one that matters.
  */
 export function DomainField() {
+  const router = useRouter();
+  const [value, setValue] = useState("");
+
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    // No scanner yet. Swallow the submit rather than reloading the page.
     event.preventDefault();
+
+    const domain = value.trim();
+    if (domain.length === 0) return;
+
+    router.push(`/scan/${encodeURIComponent(domain)}`);
   }
 
   return (
@@ -36,6 +46,8 @@ export function DomainField() {
         placeholder="example.com"
         aria-describedby="domain-help"
         className="sm:flex-1"
+        value={value}
+        onChange={(event) => setValue(event.target.value)}
       />
       {/* Natural width, not full-bleed: on a 375px screen a full-width accent
           fill becomes the loudest thing on the page, and the accent is meant to

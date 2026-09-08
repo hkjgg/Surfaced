@@ -94,7 +94,13 @@ npm run typecheck        # tsc --noEmit
 npm run check:contrast   # assert the palette still clears WCAG AA
 npm run verify:ssrf      # SSRF boundary battery (pure logic + DNS)
 npm run verify:scanner   # drive POST /api/scan against a running server
+npm run verify:report    # remediation snippets, score bands, filters
+                         # pass a base URL to also assert the scan streams
 ```
+
+`scripts/screenshot-report.mjs` captures the report at 375px and 1280px. It
+needs Playwright, which is deliberately **not** a dependency — point it at an
+existing install with `PLAYWRIGHT_PATH`.
 
 ---
 
@@ -106,10 +112,15 @@ components/ui/        presentational primitives. No data fetching, no scanner
                       imports, no business logic. If it needs to know what a
                       DNS record is, it does not belong here.
 components/layout/    app shell: header, footer, wordmark.
+components/report/    the report UI. These DO know what a DNS record is, so
+                      they live here rather than in ui/. They compose the ui/
+                      primitives; they never restyle them.
 lib/scanner/          the scanning engine: one module per check, plus
                       orchestrate.ts, score.ts, validate.ts and types.ts.
                       internal/ holds shared plumbing. See its README.
 lib/supabase/         env validation + client factories.
+lib/report/           report-layer logic that is pure and testable outside a
+                      browser — currently the URL filter state.
 lib/severity.ts       the severity scale. Single source of truth.
 lib/cn.ts             className merge helper.
 scripts/              repo checks that are not app code.
@@ -198,6 +209,18 @@ emphasis is never mistaken for a finding. If the accent is the largest thing on
 screen, that is a bug — see the `Scan` button, which is intentionally natural
 width rather than full-bleed on mobile.
 
+**The one deliberate exception: the score gauge.** Its **arc** is banded with
+the severity ramp (`scoreBand()` in `score.ts`), while the **numeral** keeps
+the accent. The arc states a verdict, so it should read as one at a glance; the
+number stays the page's single accent anchor. Both channels are backed by text
+— the band label and its rank meter sit beside the number — so the verdict
+never depends on colour. `check:contrast` asserts each arc colour clears 3:1
+against both the gauge track and the surface behind it.
+
+Note that the gauge uses its own wording for the bands, not `SEVERITY[].label`.
+"89 · LOW" invites exactly the wrong reading; "89 · MINOR ISSUES" does not. The
+colour and the meter still come from the ramp — only the words change.
+
 ### Severity scale
 
 **Colour is the secondary channel.** The primary channel is the rank meter plus
@@ -217,6 +240,28 @@ Each has `-wash` (fill) and `-edge` (border) variants. `lib/severity.ts` is the
 single source of truth for labels, meters, ordering and meanings — including
 `pass`, which stays in the scale because a report that only lists problems
 gives no evidence that anything was checked.
+
+### The radar's six axes
+
+`SCORE_AXES` in `lib/scanner/score.ts` maps display axes to checks. One pairing
+is genuinely confusing and is worth reading before touching either:
+
+| Axis label | Check module |
+|---|---|
+| Email | `email-auth.ts` |
+| DNS | `dns.ts` |
+| TLS | `tls.ts` |
+| Headers | `headers.ts` |
+| **Exposure** | **`ct.ts`** — what the domain exposes in public CT logs |
+| **Breaches** | **`exposure.ts`** — the HIBP breach check |
+
+The label "Exposure" and the file `exposure.ts` are **not** the same thing. The
+modules keep their names; `SCORE_AXES` is the mapping.
+
+Per-axis subscores come from `axisScore()`, which reuses the same weights and
+deductions as the total, so an axis can never disagree with the headline score.
+An axis whose check did not run returns `null` and renders as an explicit gap —
+never a zero, which would claim the domain failed something nobody looked at.
 
 ### Type
 
@@ -262,7 +307,12 @@ Non-negotiable, and cheaper to keep than to retrofit:
 - **Mobile-first.** 375px is the reference width. No horizontal overflow at
   any width.
 - **Motion.** `prefers-reduced-motion: reduce` disables animation globally;
-  anything animated must stay legible when it is static.
+  anything animated must stay legible when it is static. The global rule zeroes
+  animation **delay** as well as duration, because a staggered list would
+  otherwise still drip its content in — silently, with no motion to explain the
+  wait. It cannot reach JavaScript, though: a `requestAnimationFrame` loop
+  ignores CSS entirely, so anything animated in JS must check the preference
+  itself. `useReducedMotion()` exists for that, and the score count-up uses it.
 - Every input needs a label. Use `hideLabel` to hide it visually while keeping
   it announced.
 
