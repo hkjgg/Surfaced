@@ -56,6 +56,11 @@ a clean result. Specifically:
   published one.
 - Security headers are graded only from a successful response. A WAF's 400 or
   a 404 page routinely lacks the headers the real site sends.
+- A subdomain with no NS records of its own is normally delegated, not broken.
+  Delegation lives at the zone apex.
+- A subdomain with no DMARC record of its own is not unprotected: DMARC falls
+  back to the organizational domain, with `sp=` taking precedence over `p=`
+  (RFC 7489 §6.6.3). Check the parent before reporting anything.
 
 Each of these was a real bug found during verification, and each would have
 produced a confident, plausible, wrong answer.
