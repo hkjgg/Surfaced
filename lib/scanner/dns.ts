@@ -5,6 +5,8 @@
  * cannot query it — see internal/doh.ts.
  */
 
+import { getDomain } from "tldts";
+
 import type { CheckResult, Finding } from "./types";
 import { lookupDnssec, type DnssecResult } from "./internal/doh";
 import { resolveMx, resolveNs, resolveSoa, type MxRecord, type SoaRecord } from "./internal/resolver";
@@ -12,6 +14,10 @@ import { resolveMx, resolveNs, resolveSoa, type MxRecord, type SoaRecord } from 
 const CHECK = "dns" as const;
 
 export interface DnsData {
+  /** The registrable domain, e.g. golang.org for proxy.golang.org. */
+  readonly registrableDomain: string | null;
+  /** True when the scanned name is a subdomain rather than a zone apex. */
+  readonly isSubdomain: boolean;
   readonly nameservers: readonly string[];
   readonly mx: readonly MxRecord[];
   /**
@@ -41,6 +47,13 @@ export async function checkDns(
   const started = Date.now();
   signal.throwIfAborted();
 
+  // Delegation lives at the zone apex. A subdomain legitimately has no NS
+  // records of its own, so "no NS" is only a fault for a registrable domain —
+  // reporting it for a subdomain would invent a registrar problem that does
+  // not exist.
+  const registrableDomain = getDomain(hostname);
+  const isSubdomain = registrableDomain !== null && registrableDomain !== hostname;
+
   const [nameservers, mx, soa, dnssecSettled] = await Promise.all([
     resolveNs(hostname),
     resolveMx(hostname),
@@ -60,7 +73,18 @@ export async function checkDns(
     mx.length === 1 && (mx[0]?.exchange ?? "") === "" && mx[0]?.priority === 0;
 
   // ---- Nameservers --------------------------------------------------------
-  if (nameservers.length === 0) {
+  if (nameservers.length === 0 && isSubdomain) {
+    findings.push({
+      id: "dns.ns.delegated-to-parent",
+      check: CHECK,
+      severity: "pass",
+      title: "Nameservers are inherited from the parent zone",
+      observed: `${hostname} publishes no NS records of its own, which is normal for a subdomain: it is served by the ${registrableDomain} zone.`,
+      impact:
+        "Delegation is handled at the registrable domain. Scan " +
+        `${registrableDomain} to assess nameserver redundancy.`,
+    });
+  } else if (nameservers.length === 0) {
     findings.push({
       id: "dns.ns.none",
       check: CHECK,
@@ -201,7 +225,16 @@ export async function checkDns(
     check: CHECK,
     status: "ok",
     findings,
-    data: { nameservers, mx, nullMx, soa, dnssec, dnssecError },
+    data: {
+      registrableDomain,
+      isSubdomain,
+      nameservers,
+      mx,
+      nullMx,
+      soa,
+      dnssec,
+      dnssecError,
+    },
     durationMs: Date.now() - started,
   };
 }

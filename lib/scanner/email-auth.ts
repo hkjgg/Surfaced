@@ -6,6 +6,8 @@
  * mail servers.
  */
 
+import { getDomain } from "tldts";
+
 import type { CheckResult, Finding } from "./types";
 import { resolveTxt } from "./internal/resolver";
 
@@ -83,6 +85,13 @@ export interface DkimAnalysis {
 export interface DmarcAnalysis {
   readonly present: boolean;
   readonly record: string | null;
+  /**
+   * When the scanned name is a subdomain with no record of its own, DMARC
+   * falls back to the organizational domain's policy (RFC 7489 §6.6.3) — with
+   * its sp= tag taking precedence over p= for subdomains. Reporting "no
+   * DMARC" without checking that fallback would be wrong.
+   */
+  readonly inheritedFrom: string | null;
   readonly policy: string | null;
   readonly subdomainPolicy: string | null;
   readonly percent: number;
@@ -204,7 +213,9 @@ async function countSpfLookups(
   return { count, complete, chain };
 }
 
-function parseDmarcRecord(record: string): Omit<DmarcAnalysis, "present" | "record"> {
+function parseDmarcRecord(
+  record: string,
+): Omit<DmarcAnalysis, "present" | "record" | "inheritedFrom"> {
   const tags = new Map<string, string>();
 
   for (const part of record.split(";")) {
@@ -245,6 +256,10 @@ export async function checkEmailAuth(
 ): Promise<CheckResult<EmailAuthData>> {
   const started = Date.now();
   signal.throwIfAborted();
+
+  const organizationalDomain = getDomain(hostname);
+  const isSubdomain =
+    organizationalDomain !== null && organizationalDomain !== hostname;
 
   const [apexTxt, dmarcTxt, dkimResults] = await Promise.all([
     resolveTxt(hostname),
@@ -512,7 +527,27 @@ export async function checkEmailAuth(
   }
 
   // ---- DMARC --------------------------------------------------------------
-  const dmarcRecords = dmarcTxt.filter((record) => /^v=DMARC1\s*;/i.test(record.trim()));
+  const isDmarc = (record: string) => /^v=DMARC1\s*;/i.test(record.trim());
+
+  let dmarcRecords = dmarcTxt.filter(isDmarc);
+  let inheritedFrom: string | null = null;
+
+  // No record of its own and this is a subdomain: check the organizational
+  // domain before concluding anything. Receivers do exactly this.
+  if (dmarcRecords.length === 0 && isSubdomain && organizationalDomain) {
+    try {
+      const parentRecords = (
+        await resolveTxt(`_dmarc.${organizationalDomain}`, 3_000)
+      ).filter(isDmarc);
+      if (parentRecords.length > 0) {
+        dmarcRecords = parentRecords;
+        inheritedFrom = organizationalDomain;
+      }
+    } catch {
+      // Leave it absent rather than guessing.
+    }
+  }
+
   const primaryDmarc = dmarcRecords[0] ?? null;
   const dmarcTags = primaryDmarc
     ? parseDmarcRecord(primaryDmarc)
@@ -527,8 +562,15 @@ export async function checkEmailAuth(
   const dmarc: DmarcAnalysis = {
     present: primaryDmarc !== null,
     record: primaryDmarc,
+    inheritedFrom,
     ...dmarcTags,
   };
+
+  // For an inherited policy the subdomain policy tag governs, falling back to
+  // p= when sp= is absent.
+  const effectivePolicy = inheritedFrom
+    ? (dmarc.subdomainPolicy ?? dmarc.policy)
+    : dmarc.policy;
 
   if (!dmarc.present) {
     findings.push({
@@ -536,7 +578,9 @@ export async function checkEmailAuth(
       check: CHECK,
       severity: "high",
       title: "No DMARC record",
-      observed: `_dmarc.${hostname} publishes no DMARC record.`,
+      observed: isSubdomain && organizationalDomain
+        ? `Neither _dmarc.${hostname} nor _dmarc.${organizationalDomain} publishes a DMARC record.`
+        : `_dmarc.${hostname} publishes no DMARC record.`,
       impact:
         "Without DMARC, SPF and DKIM results are advisory only. Receivers have no instruction about what to do with mail that fails them, and you get no reports about who is sending as you.",
       remediation: {
@@ -551,7 +595,7 @@ export async function checkEmailAuth(
       },
     });
   } else {
-    if (dmarc.policy === "none") {
+    if (effectivePolicy === "none") {
       findings.push({
         id: "dmarc.policy.none",
         check: CHECK,
@@ -571,15 +615,17 @@ export async function checkEmailAuth(
           reference: "RFC 7489 §6.3",
         },
       });
-    } else if (dmarc.policy === "quarantine" || dmarc.policy === "reject") {
+    } else if (effectivePolicy === "quarantine" || effectivePolicy === "reject") {
       findings.push({
         id: "dmarc.policy.enforcing",
         check: CHECK,
         severity: "pass",
-        title: `DMARC policy is p=${dmarc.policy}`,
-        observed: `The DMARC record is "${dmarc.record}".`,
+        title: `DMARC policy is ${effectivePolicy}`,
+        observed: inheritedFrom
+          ? `${hostname} publishes no DMARC record of its own, so it inherits the policy from ${inheritedFrom}: "${dmarc.record}" (sp=${dmarc.subdomainPolicy ?? "absent, so p= applies"}).`
+          : `The DMARC record is "${dmarc.record}".`,
         impact:
-          dmarc.policy === "reject"
+          effectivePolicy === "reject"
             ? "Receivers are told to reject mail that fails authentication."
             : "Receivers are told to quarantine mail that fails authentication.",
       });
@@ -589,7 +635,7 @@ export async function checkEmailAuth(
         check: CHECK,
         severity: "medium",
         title: "DMARC record has no usable policy",
-        observed: `The DMARC record is "${dmarc.record}", with p=${dmarc.policy ?? "(absent)"}.`,
+        observed: `The DMARC record is "${dmarc.record}", with an effective policy of ${effectivePolicy ?? "(absent)"}.`,
         impact:
           "A DMARC record without a valid p= tag is ignored by receivers, so it provides neither enforcement nor reporting.",
         remediation: {
