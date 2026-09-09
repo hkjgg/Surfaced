@@ -16,6 +16,7 @@
  *   replay   --from a.json   shoot a report captured elsewhere
  *   error    <domain>        shoot a rejected scan (e.g. a private address)
  *   empty                    shoot the home page
+ *   layout   <domain>        assert the sticky column pins and stays reachable
  *
  * Flags: --only <375|1280>  one width per run (the loading state needs it, so
  *                           the second viewport does not replay a cached scan)
@@ -196,6 +197,78 @@ try {
       await page.goto(`${BASE}/scan/${encodeURIComponent(positional)}`);
       await page.waitForSelector("text=/Scan failed/", { timeout: 20_000 });
       await shoot(page, flag("label") ?? "error", size);
+    }
+
+    if (mode === "layout") {
+      // The sticky column is only correct if it pins AND nothing in it becomes
+      // unreachable. A column taller than the viewport that merely sticks has
+      // hidden its own bottom; one that scrolls internally but drifts is not
+      // sticky at all. Both halves are asserted.
+      await page.goto(`${BASE}/scan/${encodeURIComponent(positional)}`);
+      await page.waitForSelector("#findings-heading", { timeout: 40_000 });
+      await page.waitForTimeout(600);
+
+      const column = page
+        .locator("#coverage-heading")
+        .locator("xpath=ancestor::div[contains(@class,'lg:sticky')][1]");
+
+      if (size.width < 1024) {
+        console.log(`  --   ${size.name}px: single column, nothing to pin`);
+      } else {
+        // A sticky column can only stay pinned while its container is taller
+        // than it is; past that the container's bottom catches up and the
+        // column travels with the page. That is correct behaviour, so the
+        // assertion has to run inside the real range rather than at arbitrary
+        // scroll positions — a short report simply has less of one.
+        const range = await column.evaluate((el) => {
+          const grid = el.parentElement;
+          const top = grid.getBoundingClientRect().top + window.scrollY;
+          const offset = Number.parseFloat(getComputedStyle(el).top) || 0;
+          return {
+            start: top,
+            offset,
+            // The column unpins once the container's bottom reaches it, which
+            // happens `offset` earlier than the raw height difference — the
+            // sticky top inset counts against the range.
+            span: Math.max(0, grid.offsetHeight - el.offsetHeight - offset),
+          };
+        });
+
+        if (range.span < 40) {
+          console.log(
+            `  --   ${size.name}px: report too short to pin (${Math.round(range.span)}px of range)`,
+          );
+          await context.close();
+          continue;
+        }
+
+        const tops = [];
+        for (const fraction of [0.15, 0.5, 0.9]) {
+          const y = range.start + range.span * fraction;
+          await page.evaluate((to) => window.scrollTo(0, to), y);
+          await page.waitForTimeout(200);
+          tops.push(Math.round((await column.boundingBox()).y));
+        }
+
+        // The offset is --spacing-sticky (4.5rem), clearing the 3.5rem header.
+        const pinned = tops.every((top) => Math.abs(top - range.offset) <= 1);
+        const reachable = await column.evaluate((el) => {
+          if (el.scrollHeight <= el.clientHeight + 1) return true;
+          el.scrollTop = el.scrollHeight;
+          return el.scrollHeight - el.scrollTop - el.clientHeight < 2;
+        });
+
+        for (const [label, ok] of [
+          [
+            `pins at ${range.offset}px across its ${Math.round(range.span)}px range (${tops.join(", ")})`,
+            pinned,
+          ],
+          ["its own overflow scrolls to the end", reachable],
+        ]) {
+          console.log(`  ${ok ? "✓" : "✗"} ${size.name}px: ${label}`);
+          if (!ok) process.exitCode = 1;
+        }
+      }
     }
 
     if (mode === "empty") {

@@ -114,13 +114,16 @@ components/ui/        presentational primitives. No data fetching, no scanner
 components/layout/    app shell: header, footer, wordmark.
 components/report/    the report UI. These DO know what a DNS record is, so
                       they live here rather than in ui/. They compose the ui/
-                      primitives; they never restyle them.
+                      primitives; they never restyle them. tone.ts holds the
+                      severity -> class maps, in one place so they cannot drift.
 lib/scanner/          the scanning engine: one module per check, plus
                       orchestrate.ts, score.ts, validate.ts and types.ts.
                       internal/ holds shared plumbing. See its README.
 lib/supabase/         env validation + client factories.
 lib/report/           report-layer logic that is pure and testable outside a
                       browser — currently the URL filter state.
+lib/scan-facts.ts     figures the marketing surface may state, each derived
+                      from code or carrying its provenance in a comment.
 lib/severity.ts       the severity scale. Single source of truth.
 lib/cn.ts             className merge helper.
 scripts/              repo checks that are not app code.
@@ -287,6 +290,35 @@ low-alpha.
 - `label` — the recurring uppercase mono micro-label (card eyebrows, severity
   labels, table headers).
 - `shell` — the page container, with a gutter that holds at 375px.
+- `dot-matrix` — the home page's dot grid, masked to fade before the content.
+- `score-glow` — the ambient tint behind the score card and the home input.
+  Drawn in `currentColor`, so the element's own band class supplies the hue and
+  no new colour value exists. Centred and transparent well before its box edge:
+  anchored to the top instead, a clipping parent cut it at full strength and it
+  read as a seam.
+
+### Weighting the report
+
+Hierarchy is carried by three things, and none of them is colour alone:
+
+- The score numeral uses `--text-score` (48 → 72px). It is the conclusion of
+  the report and should be the largest thing on the page.
+- Findings are tiered by severity in `tone.ts` — critical/high get a coloured
+  left border on `--color-raised`, medium/low sit flat, pass recedes. The
+  `Badge` is identical in every tier, so the weighting is reinforcement; strip
+  the colour and the report still reads. `check:contrast` asserts text on both
+  new surfaces.
+- Section headers carry a rule. They were too quiet to anchor anything.
+
+The report is two columns from 1024px, with the score, its caveats and the
+coverage grid sticky at `--spacing-sticky` (which clears the sticky header).
+Two things are load-bearing there and both were bugs first: the column needs
+`self-start`, because a stretched grid item can never stick, and its children
+need `shrink-0`, because flex children default to shrinking and a column with a
+`max-height` will compress them instead of scrolling. It also needs the
+`max-height` at all — a sticky element taller than the viewport silently stops
+sticking. `screenshot-report.mjs layout <domain>` asserts both that it pins and
+that its own overflow stays reachable.
 
 ---
 

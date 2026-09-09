@@ -73,7 +73,7 @@ export function CertTimeline({ tls }: CertTimelineProps) {
   return (
     <Card>
       <CardHeader eyebrow="TLS · Validity">
-        <CardTitle className="text-base">Certificate window</CardTitle>
+        <CardTitle className="text-base text-fg">Certificate window</CardTitle>
       </CardHeader>
 
       <CardBody>

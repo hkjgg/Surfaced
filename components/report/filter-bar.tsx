@@ -1,17 +1,10 @@
 "use client";
 
 import type { FindingFilterControls } from "@/components/report/use-finding-filters";
+import { TONE_CHIP } from "@/components/report/tone";
 import { cn } from "@/lib/cn";
 import type { Finding } from "@/lib/scanner/types";
-import { SEVERITIES, SEVERITY, type Severity } from "@/lib/severity";
-
-const ACTIVE_TONE: Record<Severity, string> = {
-  critical: "border-critical-edge bg-critical-wash text-critical",
-  high: "border-high-edge bg-high-wash text-high",
-  medium: "border-medium-edge bg-medium-wash text-medium",
-  low: "border-low-edge bg-low-wash text-low",
-  pass: "border-pass-edge bg-pass-wash text-pass",
-};
+import { SEVERITIES, SEVERITY } from "@/lib/severity";
 
 interface FilterBarProps {
   findings: readonly Finding[];
@@ -72,7 +65,7 @@ export function FilterBar({ findings, visibleCount, filters }: FilterBarProps) {
               className={cn(
                 "label inline-flex items-center gap-1.5 rounded-sm border px-2 py-1 transition-colors duration-150",
                 active
-                  ? ACTIVE_TONE[severity]
+                  ? TONE_CHIP[severity]
                   : "border-border text-fg-subtle hover:bg-raised hover:text-fg-muted",
                 empty && "opacity-45",
               )}

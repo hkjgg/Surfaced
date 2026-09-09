@@ -96,6 +96,12 @@
   --text-4xl: clamp(2.125rem, 1.7rem + 2.1vw, 3rem);
   --text-4xl--line-height: 1.12;
 
+  /* The score numeral, and nothing else. The rest of the scale tops out at
+     48px, which is a heading — this is a verdict, and it should be the largest
+     thing on the report. 48px at 375, 72px from ~1100 up. */
+  --text-score: clamp(3rem, 2.2rem + 4vw, 4.5rem);
+  --text-score--line-height: 1;
+
   --tracking-display: -0.022em;
   --tracking-tight: -0.011em;
   --tracking-label: 0.08em;
@@ -106,6 +112,9 @@
   --spacing-gutter: 1.25rem;
   --spacing-section: 4rem;
   --spacing-section-lg: 6rem;
+  /* Clears the sticky header (h-14 = 3.5rem) with 1rem to spare. Named so the
+     report's sticky column and the header can never drift apart. */
+  --spacing-sticky: 4.5rem;
 
   /* ---- radii -----------------------------------------------------------
      Tight. Tight corners read as tooling; soft corners read as SaaS. */
@@ -263,4 +272,43 @@
   max-width: 68rem;
   margin-inline: auto;
   padding-inline: var(--spacing-gutter);
+}
+
+/* The home page ground: a faint dot grid, the texture of a plotting surface
+   rather than an image. It fades out down the page with a mask so it never
+   competes with the text sitting on top of it. Static — nothing to gate under
+   prefers-reduced-motion because nothing moves. */
+@utility dot-matrix {
+  background-image: radial-gradient(
+    circle at center,
+    var(--color-border) 1px,
+    transparent 1px
+  );
+  background-size: 22px 22px;
+  background-position: center top;
+  mask-image: linear-gradient(
+    to bottom,
+    rgb(0 0 0 / 0.9) 0%,
+    rgb(0 0 0 / 0.35) 45%,
+    transparent 80%
+  );
+}
+
+/* Ambient tint behind the score card, and behind the home input.
+
+   The gradient is drawn in `currentColor`, so whatever sets the text colour
+   supplies the hue — for the score card that is the band class already on the
+   element. No new colour value is introduced, and the tint can never disagree
+   with the band it is tinting. A hint in the surface, not a light show:
+   the stops stay under 14% and it does not animate. */
+@utility score-glow {
+  /* Centred, and fully transparent well before the box edge. Anchoring it to
+     the top edge instead put the gradient at full strength exactly where a
+     clipping parent cut it off, which read as a seam rather than a glow. */
+  background: radial-gradient(
+    70% 70% at 50% 50%,
+    color-mix(in srgb, currentColor 13%, transparent) 0%,
+    color-mix(in srgb, currentColor 4%, transparent) 45%,
+    transparent 72%
+  );
 }
