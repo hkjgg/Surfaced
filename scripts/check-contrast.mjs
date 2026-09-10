@@ -58,6 +58,32 @@ for (const t of signal) check(`fg-invert on ${t} fill`, ratio(tokens["fg-invert"
 // decoration — it is how the verdict reads at a glance — so WCAG 1.4.11
 // applies to it at 3:1, both against the track it sits on and against the
 // page behind it.
+// The finding tiers introduced two surfaces that are not plain tokens: the
+// "loud" tier sits on --color-raised, and the "quiet" (pass) tier sits on
+// --color-surface at 60% over --color-bg. Dimming a pass finding is a
+// deliberate de-emphasis, and it is exactly the kind of change that quietly
+// walks text under AA, so both are asserted rather than eyeballed.
+const over = (fg, bg, alpha) => {
+  const mix = (i) => {
+    const f = parseInt(fg.slice(i, i + 2), 16);
+    const b = parseInt(bg.slice(i, i + 2), 16);
+    return Math.round(f * alpha + b * (1 - alpha));
+  };
+  return `#${[1, 3, 5].map((i) => mix(i).toString(16).padStart(2, "0")).join("")}`;
+};
+
+const quietSurface = over(tokens.surface, tokens.bg, 0.6);
+
+console.log("\n--- finding tiers: text on the weighted surfaces (min 4.5) ---");
+for (const t of text) {
+  check(`${t} on raised (loud tier)`, ratio(tokens[t], tokens.raised), 4.5);
+}
+check("fg-muted on quiet tier (pass title)", ratio(tokens["fg-muted"], quietSurface), 4.5);
+check("fg-subtle on quiet tier (pass observed)", ratio(tokens["fg-subtle"], quietSurface), 4.5);
+for (const t of signal) {
+  check(`${t} badge text on quiet tier`, ratio(tokens[t], quietSurface), 4.5);
+}
+
 console.log("\n--- non-text: score gauge arc vs its track and the page (min 3.0) ---");
 for (const t of ["critical", "high", "medium", "low", "pass"]) {
   check(`${t} arc on gauge track`, ratio(tokens[t], tokens.border), 3);

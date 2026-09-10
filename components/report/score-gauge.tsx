@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 
+import { TONE_TEXT } from "@/components/report/tone";
 import { useReducedMotion } from "@/components/report/use-reduced-motion";
 import { cn } from "@/lib/cn";
 import { scoreBand } from "@/lib/scanner/score";
@@ -12,23 +13,6 @@ import { CHECK_IDS } from "@/lib/scanner/types";
 const RADIUS = 52;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 const COUNT_MS = 700;
-
-/**
- * The arc is coloured from the severity ramp; the numeral keeps the accent.
- *
- * This is the one place the two scales deliberately meet. The arc states a
- * verdict, so it should read as one at a glance; the number stays the page's
- * single accent anchor, per the accent's reserved role. Colour is never the
- * only channel either way — the band label and its rank meter sit directly
- * beneath the number.
- */
-const ARC_TONE: Record<Severity, string> = {
-  critical: "text-critical",
-  high: "text-high",
-  medium: "text-medium",
-  low: "text-low",
-  pass: "text-pass",
-};
 
 /**
  * Band wording for a SCORE, which is not the same sentence as band wording for
@@ -91,6 +75,18 @@ interface ScoreGaugeProps {
   score: ScanScore;
 }
 
+/**
+ * The score readout.
+ *
+ * The arc is coloured from the severity ramp; the numeral keeps the accent.
+ * This is the one place the two scales deliberately meet — the arc states a
+ * verdict so it should read as one, while the number stays the page's single
+ * accent anchor. Colour is never the only channel either way: the band label
+ * and its rank meter sit beside the number.
+ *
+ * The numeral uses --text-score (48px → 72px) because it is the conclusion of
+ * the whole report and should be the largest thing on the page.
+ */
 export function ScoreGauge({ score }: ScoreGaugeProps) {
   const reducedMotion = useReducedMotion();
   const animate = !reducedMotion;
@@ -123,7 +119,7 @@ export function ScoreGauge({ score }: ScoreGaugeProps) {
           viewBox="0 0 120 120"
           role="img"
           aria-label={description}
-          className="h-[7.5rem] w-[7.5rem] -rotate-90"
+          className="h-[8.5rem] w-[8.5rem] -rotate-90 sm:h-[10rem] sm:w-[10rem]"
         >
           <circle
             cx="60"
@@ -144,7 +140,7 @@ export function ScoreGauge({ score }: ScoreGaugeProps) {
               strokeLinecap="round"
               strokeDasharray={CIRCUMFERENCE}
               strokeDashoffset={offset}
-              className={cn(band ? ARC_TONE[band] : "", "animate-gauge")}
+              className={cn(band ? TONE_TEXT[band] : "", "animate-gauge")}
               style={
                 {
                   "--gauge-empty": CIRCUMFERENCE,
@@ -161,7 +157,7 @@ export function ScoreGauge({ score }: ScoreGaugeProps) {
           ) : (
             <span
               aria-hidden="true"
-              className="font-mono text-3xl font-medium tabular-nums tracking-display text-accent"
+              className="font-mono text-score font-medium tabular-nums tracking-display text-accent"
             >
               {displayed}
             </span>
@@ -173,7 +169,7 @@ export function ScoreGauge({ score }: ScoreGaugeProps) {
         <p className="label text-fg-subtle">Score</p>
 
         {band ? (
-          <p className={cn("mt-1 flex items-center gap-2", ARC_TONE[band])}>
+          <p className={cn("mt-1 flex items-center gap-2", TONE_TEXT[band])}>
             <span aria-hidden="true" className="font-mono text-sm">
               {SEVERITY[band].meter}
             </span>

@@ -11,9 +11,13 @@ import { FindingCard } from "@/components/report/finding-card";
 import { ScanTerminal, type TerminalLine } from "@/components/report/scan-terminal";
 import { ScoreGauge } from "@/components/report/score-gauge";
 import { ScoreRadar } from "@/components/report/score-radar";
+import { SectionHeading } from "@/components/report/section-heading";
+import { TONE_TEXT } from "@/components/report/tone";
 import { useFindingFilters } from "@/components/report/use-finding-filters";
 import { applyFilters } from "@/lib/report/filters";
 import { Callout } from "@/components/ui";
+import { cn } from "@/lib/cn";
+import { scoreBand } from "@/lib/scanner/score";
 import type { ScanReport } from "@/lib/scanner/types";
 
 interface ScanError {
@@ -146,6 +150,8 @@ export function ReportView({ domain }: ReportViewProps) {
   }, [domain]);
 
   const visible = report ? applyFilters(report.findings, filters) : [];
+  const band =
+    report && report.score.value !== null ? scoreBand(report.score.value) : null;
 
   return (
     <div className="flex flex-col gap-5">
@@ -154,6 +160,7 @@ export function ReportView({ domain }: ReportViewProps) {
         lines={lines}
         running={running}
         cached={cached}
+        durationMs={report?.durationMs}
       />
 
       {error ? (
@@ -171,62 +178,100 @@ export function ReportView({ domain }: ReportViewProps) {
       ) : null}
 
       {report ? (
-        <>
-          <div className="grid gap-5 rounded-lg border border-border bg-surface p-4 sm:grid-cols-[auto_1fr] sm:items-center sm:gap-8 sm:p-5">
-            <ScoreGauge score={report.score} />
-            <div className="min-w-0">
-              <ScoreRadar checks={report.checks} />
+        /* Two columns from 1024px: the verdict stays put while the evidence
+           scrolls past it. One column below that, in the same order. */
+        <div className="lg:grid lg:grid-cols-[minmax(0,21rem)_minmax(0,1fr)] lg:items-start lg:gap-6">
+          {/* `self-start` is load-bearing: a grid item stretches to the row
+             height by default, and a stretched item can never stick. The
+             max-height matters too — a sticky element taller than the viewport
+             silently stops sticking, and this column runs tall on a short
+             laptop screen. */}
+          {/* `shrink-0` on every child is load-bearing alongside the max-height:
+             flex children default to shrink:1, so a column that overflows its
+             max-height compresses them instead of scrolling — which crushed the
+             score card to a sliver and clipped the coverage cells. */}
+          <div className="flex flex-col gap-4 lg:sticky lg:top-sticky lg:max-h-[calc(100dvh-var(--spacing-sticky)-1rem)] lg:self-start lg:overflow-y-auto lg:pr-1 lg:[&>*]:shrink-0">
+            <div className="relative isolate overflow-hidden rounded-lg border border-border bg-surface p-4 sm:p-5">
+              {/* Ambient tint, hue supplied by the band via currentColor. It
+                  is painted, not animated — nothing to gate. */}
+              {band ? (
+                <div
+                  aria-hidden="true"
+                  className={cn(
+                    "score-glow pointer-events-none absolute -inset-x-8 -top-16 -z-10 h-72",
+                    TONE_TEXT[band],
+                  )}
+                />
+              ) : null}
+
+              <ScoreGauge score={report.score} />
+
+              <div className="mt-5 min-w-0 border-t border-border pt-4">
+                <ScoreRadar checks={report.checks} />
+              </div>
             </div>
+
+            <CoverageNotice score={report.score} checks={report.checks} />
+
+            <section aria-labelledby="coverage-heading">
+              <SectionHeading
+                id="coverage-heading"
+                meta={`${report.score.checksIncluded.length}/${report.checks.length}`}
+              >
+                Check coverage
+              </SectionHeading>
+              <CheckCoverage checks={report.checks} />
+            </section>
           </div>
 
-          <CoverageNotice score={report.score} checks={report.checks} />
+          <div className="mt-5 flex flex-col gap-5 lg:mt-0">
+            <section aria-labelledby="findings-heading">
+              <SectionHeading
+                id="findings-heading"
+                meta={
+                  visible.length === report.findings.length
+                    ? `${report.findings.length}`
+                    : `${visible.length} of ${report.findings.length}`
+                }
+              >
+                Findings
+              </SectionHeading>
 
-          <section aria-labelledby="findings-heading">
-            <h2 id="findings-heading" className="label mb-2 text-fg-subtle">
-              Findings
-            </h2>
+              <FilterBar
+                findings={report.findings}
+                visibleCount={visible.length}
+                filters={filters}
+              />
 
-            <FilterBar
-              findings={report.findings}
-              visibleCount={visible.length}
-              filters={filters}
+              {visible.length === 0 ? (
+                <p className="mt-3 rounded-lg border border-border bg-surface px-4 py-6 text-center text-sm text-fg-muted">
+                  No findings match the current filters.
+                </p>
+              ) : (
+                <ul className="mt-3 flex flex-col gap-2">
+                  {visible.map((finding, index) => (
+                    <FindingCard
+                      key={finding.id}
+                      finding={finding}
+                      index={index}
+                    />
+                  ))}
+                </ul>
+              )}
+            </section>
+
+            <CertTimeline
+              tls={report.checks.find((check) => check.check === "tls")}
             />
 
-            {visible.length === 0 ? (
-              <p className="mt-3 rounded-lg border border-border bg-surface px-4 py-6 text-center text-sm text-fg-muted">
-                No findings match the current filters.
-              </p>
-            ) : (
-              <ul className="mt-3 flex flex-col gap-2">
-                {visible.map((finding, index) => (
-                  <FindingCard
-                    key={finding.id}
-                    finding={finding}
-                    index={index}
-                  />
-                ))}
-              </ul>
-            )}
-          </section>
-
-          <CertTimeline
-            tls={report.checks.find((check) => check.check === "tls")}
-          />
-
-          <section aria-labelledby="coverage-heading">
-            <h2 id="coverage-heading" className="label mb-2 text-fg-subtle">
-              Check coverage
-            </h2>
-            <CheckCoverage checks={report.checks} />
-          </section>
-
-          <p className="font-mono text-2xs text-fg-subtle">
-            Scanned {new Date(report.scannedAt).toISOString().replace("T", " ").slice(0, 19)} UTC
-            {" · "}
-            {report.durationMs}ms
-            {cached ? " · served from cache" : ""}
-          </p>
-        </>
+            <p className="font-mono text-2xs text-fg-subtle">
+              Scanned {new Date(report.scannedAt).toISOString().replace("T", " ").slice(0, 19)} UTC
+              {" · "}
+              {report.durationMs}ms
+              {cached ? " · served from cache" : ""}
+            </p>
+          </div>
+        </div>
       ) : null}
     </div>
   );

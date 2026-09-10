@@ -21,6 +21,20 @@ const STATUS_GLYPH: Record<CheckStatus, string> = {
   not_configured: "–",
 };
 
+/**
+ * The status LED.
+ *
+ * Solid, never pulsing. A page of blinking dots reads as decoration and is
+ * tiring to sit in front of, and there is nothing here that changes after the
+ * scan settles — a pulse would be animating a constant. The dot is the third
+ * channel after the glyph and the status word, so it is redundant by design.
+ */
+const STATUS_LED: Record<CheckStatus, string> = {
+  ok: "bg-pass",
+  error: "bg-medium",
+  not_configured: "bg-fg-subtle",
+};
+
 interface CheckCoverageProps {
   checks: readonly CheckResult[];
 }
@@ -49,7 +63,16 @@ export function CheckCoverage({ checks }: CheckCoverageProps) {
             )}
           >
             <div className="flex items-baseline justify-between gap-2">
-              <span className="label text-fg">{label}</span>
+              <span className="flex items-center gap-2">
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    "size-1.5 shrink-0 rounded-full",
+                    STATUS_LED[status],
+                  )}
+                />
+                <span className="label text-fg">{label}</span>
+              </span>
               <span aria-hidden="true" className="font-mono text-xs">
                 {STATUS_GLYPH[status]}
               </span>
