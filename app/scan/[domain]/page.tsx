@@ -15,9 +15,23 @@ export async function generateMetadata({
   const { domain } = await params;
   const hostname = decodeURIComponent(domain);
 
+  const description = `Passive attack-surface report for ${hostname}: DNS, email authentication, TLS, HTTP security headers and Certificate Transparency, scored and ranked.`;
+
   return {
-    title: `${hostname} — Surfaced`,
-    description: `Passive attack-surface report for ${hostname}.`,
+    // The layout's template appends " — Surfaced".
+    title: hostname,
+    description,
+    openGraph: {
+      title: `${hostname} — Surfaced`,
+      description,
+    },
+    twitter: {
+      title: `${hostname} — Surfaced`,
+      description,
+    },
+    // A report is generated per visit from live data; there is nothing stable
+    // for a crawler to index, and a stale one would misrepresent the domain.
+    robots: { index: false, follow: true },
   };
 }
 

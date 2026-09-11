@@ -11,13 +11,29 @@
  */
 
 import type { CheckResult, Finding } from "./types";
+import { remainingMs } from "./internal/timeout";
 
 const CHECK = "ct" as const;
 
 const CRT_SH_ENDPOINT = "https://crt.sh/";
 
-/** crt.sh is frequently slow; this budget is generous but finite. */
-const CT_TIMEOUT_MS = 12_000;
+/**
+ * crt.sh is frequently slow, and intermittently returns 502. This budget is
+ * generous but finite, and it is the whole budget for BOTH attempts — a retry
+ * does not buy more time, it spends what is left.
+ */
+const CT_TIMEOUT_MS = 20_000;
+
+/** Pause between the first failure and the retry. */
+const RETRY_BACKOFF_MS = 600;
+
+/**
+ * Don't start a second attempt we have no room to finish. Starting one and
+ * having it aborted mid-flight wastes the remaining budget and reports a
+ * timeout in place of the real error, which is strictly less useful than
+ * reporting the 502 we already have.
+ */
+const MIN_RETRY_WINDOW_MS = 3_000;
 
 /** Guards against an enormous response for a domain with many certificates. */
 const MAX_RESPONSE_BYTES = 4_000_000;
@@ -128,6 +144,119 @@ function findNotable(
   return notable;
 }
 
+/**
+ * A failure that is worth trying once more.
+ *
+ * crt.sh has returned 502 in live use, and a transient 5xx or a dropped
+ * connection says nothing about the domain being scanned. A 4xx does: it is a
+ * decision the server made deliberately, and repeating the same request will
+ * get the same answer.
+ */
+class TransientCtError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "TransientCtError";
+  }
+}
+
+function sleep(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+
+    function onAbort() {
+      clearTimeout(timer);
+      reject(new Error("CT check aborted"));
+    }
+
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+/** One attempt: fetch, guard the size, parse. */
+async function attemptFetch(
+  href: string,
+  fetcher: CtFetcher,
+  signal: AbortSignal,
+): Promise<CrtShEntry[]> {
+  let response: Response;
+  try {
+    response = await fetcher(href, signal);
+  } catch (error) {
+    // An abort is our own deadline expiring, not crt.sh misbehaving; it must
+    // not be retried. Anything else here is a network-level failure.
+    if (signal.aborted) throw error;
+    throw new TransientCtError(
+      `crt.sh could not be reached (${error instanceof Error ? error.message : "unknown error"})`,
+    );
+  }
+
+  if (response.status >= 500) {
+    throw new TransientCtError(`crt.sh returned HTTP ${response.status}`);
+  }
+
+  if (!response.ok) {
+    throw new Error(`crt.sh returned HTTP ${response.status}`);
+  }
+
+  const declaredLength = Number.parseInt(
+    response.headers.get("content-length") ?? "",
+    10,
+  );
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_RESPONSE_BYTES) {
+    throw new Error(
+      `crt.sh response is ${declaredLength} bytes, over the ${MAX_RESPONSE_BYTES} byte cap`,
+    );
+  }
+
+  const text = await response.text();
+  if (text.length > MAX_RESPONSE_BYTES) {
+    throw new Error(`crt.sh response exceeded the ${MAX_RESPONSE_BYTES} byte cap`);
+  }
+
+  const parsed: unknown = JSON.parse(text);
+  if (!isEntryArray(parsed)) {
+    throw new Error("crt.sh returned an unexpected payload shape");
+  }
+
+  return parsed;
+}
+
+/**
+ * Fetch with a single retry, bounded by the scan's own deadline.
+ *
+ * There is deliberately no fallback result. If both attempts fail the error
+ * propagates, the check reports `error`, and score.ts drops it from the
+ * denominator — which is the honest outcome. Returning an empty hostname list
+ * would read as "this domain has published no certificates", a confident claim
+ * about the domain made from a fact about crt.sh.
+ */
+async function fetchEntries(
+  href: string,
+  fetcher: CtFetcher,
+  signal: AbortSignal,
+  deadline: number,
+): Promise<CrtShEntry[]> {
+  try {
+    return await attemptFetch(href, fetcher, signal);
+  } catch (error) {
+    if (!(error instanceof TransientCtError)) throw error;
+    if (signal.aborted) throw error;
+
+    // Only retry if there is room for the backoff AND a realistic attempt.
+    // Otherwise report what we already know rather than trading it for a
+    // timeout.
+    if (remainingMs(deadline) < RETRY_BACKOFF_MS + MIN_RETRY_WINDOW_MS) {
+      throw error;
+    }
+
+    await sleep(RETRY_BACKOFF_MS, signal);
+    return attemptFetch(href, fetcher, signal);
+  }
+}
+
 export async function checkCt(
   hostname: string,
   signal: AbortSignal,
@@ -141,6 +270,8 @@ export async function checkCt(
   url.searchParams.set("output", "json");
   url.searchParams.set("exclude", "expired");
 
+  const deadline = started + CT_TIMEOUT_MS;
+
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), CT_TIMEOUT_MS);
   const onParentAbort = () => controller.abort();
@@ -148,32 +279,7 @@ export async function checkCt(
 
   let entries: CrtShEntry[];
   try {
-    const response = await fetcher(url.href, controller.signal);
-
-    if (!response.ok) {
-      throw new Error(`crt.sh returned HTTP ${response.status}`);
-    }
-
-    const declaredLength = Number.parseInt(
-      response.headers.get("content-length") ?? "",
-      10,
-    );
-    if (Number.isFinite(declaredLength) && declaredLength > MAX_RESPONSE_BYTES) {
-      throw new Error(
-        `crt.sh response is ${declaredLength} bytes, over the ${MAX_RESPONSE_BYTES} byte cap`,
-      );
-    }
-
-    const text = await response.text();
-    if (text.length > MAX_RESPONSE_BYTES) {
-      throw new Error(`crt.sh response exceeded the ${MAX_RESPONSE_BYTES} byte cap`);
-    }
-
-    const parsed: unknown = JSON.parse(text);
-    if (!isEntryArray(parsed)) {
-      throw new Error("crt.sh returned an unexpected payload shape");
-    }
-    entries = parsed;
+    entries = await fetchEntries(url.href, fetcher, controller.signal, deadline);
   } finally {
     clearTimeout(timer);
     signal.removeEventListener("abort", onParentAbort);

@@ -16,6 +16,7 @@
  *   replay   --from a.json   shoot a report captured elsewhere
  *   error    <domain>        shoot a rejected scan (e.g. a private address)
  *   empty                    shoot the home page
+ *   notfound                 shoot the 404
  *   layout   <domain>        assert the sticky column pins and stays reachable
  *
  * Flags: --only <375|1280>  one width per run (the loading state needs it, so
@@ -274,7 +275,15 @@ try {
     if (mode === "empty") {
       await page.goto(BASE);
       await page.waitForSelector("form");
-      await shoot(page, "empty", size);
+      await shoot(page, "home", size);
+    }
+
+    if (mode === "notfound") {
+      // Any route that does not exist; the 404 offers the scanner rather than
+      // just apologising, so it has a form to wait for like the home page.
+      await page.goto(`${BASE}/no-such-page`);
+      await page.waitForSelector("form");
+      await shoot(page, "404", size);
     }
 
     await context.close();

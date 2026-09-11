@@ -94,8 +94,9 @@ npm run typecheck        # tsc --noEmit
 npm run check:contrast   # assert the palette still clears WCAG AA
 npm run verify:ssrf      # SSRF boundary battery (pure logic + DNS)
 npm run verify:scanner   # drive POST /api/scan against a running server
-npm run verify:report    # remediation snippets, score bands, filters
+npm run verify:report    # remediation snippets, score bands, filters, site URL
                          # pass a base URL to also assert the scan streams
+npm run verify:ct        # the crt.sh retry, through an injected fetcher
 ```
 
 `scripts/screenshot-report.mjs` captures the report at 375px and 1280px. It
@@ -124,6 +125,9 @@ lib/report/           report-layer logic that is pure and testable outside a
                       browser — currently the URL filter state.
 lib/scan-facts.ts     figures the marketing surface may state, each derived
                       from code or carrying its provenance in a comment.
+lib/site-url.ts       the deployment's own origin, validated. Feeds
+                      metadataBase; returns null when unset.
+assets/               one font file, for next/og. See assets/README.md.
 lib/severity.ts       the severity scale. Single source of truth.
 lib/cn.ts             className merge helper.
 scripts/              repo checks that are not app code.
@@ -167,6 +171,21 @@ for the exposure check. `.env.example` documents them. With no HIBP key the
 exposure check returns `not_configured`, which is excluded from scoring — it
 must never be reported as a pass, because "we did not look" and "we looked and
 it was clean" are different facts.
+
+### The site URL, and why `metadataBase` now exists
+
+Open Graph needs absolute URLs, so the app has to know its own origin — the one
+thing it can only learn from the environment. `lib/site-url.ts` reads
+`NEXT_PUBLIC_SITE_URL`, falling back to Vercel's
+`VERCEL_PROJECT_PRODUCTION_URL`, and returns `null` when neither is usable; the
+build then simply omits `metadataBase`. This supersedes the earlier "no
+metadataBase at all" note, which was right while nothing needed an absolute URL.
+
+The Vercel variable is a **bare hostname**, and it is matched against a strict
+hostname pattern *before* a scheme is attached. Prefixing `https://` onto an
+unvalidated string is the concatenation rule 1 forbids: `evil.com/@surfaced.app`
+parses into a URL whose host is `evil.com` while reading as though it were not.
+`verify:report` pins that case and several others.
 
 ---
 
