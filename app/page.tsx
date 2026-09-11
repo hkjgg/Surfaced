@@ -1,6 +1,14 @@
+import type { Metadata } from "next";
+
 import { DomainField } from "@/components/domain-field";
 import { TelemetryStrip } from "@/components/telemetry-strip";
 import { Wordmark } from "@/components/layout/wordmark";
+
+export const metadata: Metadata = {
+  // `absolute` opts out of the layout's "%s — Surfaced" template, which would
+  // otherwise render "Surfaced — passive attack surface scanner — Surfaced".
+  title: { absolute: "Surfaced — passive attack surface scanner" },
+};
 
 export default function HomePage() {
   return (

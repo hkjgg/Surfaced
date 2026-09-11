@@ -44,3 +44,6 @@ next-env.d.ts
 # playwright / local verification
 /playwright-report/
 /test-results/
+
+# local Claude Code settings (machine-specific permissions)
+.claude/settings.local.json

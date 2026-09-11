@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <!--
+    The wordmark's terminal cursor block, on the app's own background.
+    Pure geometry: no shield, no padlock, nothing to render as a glyph — see
+    CLAUDE.md §7. Colours are the literal token values because an SVG asset
+    cannot read CSS custom properties.
+      #0a0b0d = --color-bg
+      #8e81f7 = --color-accent
+  -->
+  <rect width="32" height="32" rx="7" fill="#0a0b0d"/>
+  <rect x="11" y="7" width="10" height="18" rx="1.5" fill="#8e81f7"/>
+</svg>

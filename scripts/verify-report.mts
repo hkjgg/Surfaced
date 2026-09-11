@@ -14,6 +14,7 @@
 import { remediationTargets } from "../lib/scanner/remediation.js";
 import { axisScore, scoreBand } from "../lib/scanner/score.js";
 import { applyFilters, parseFilters, serializeFilters } from "../lib/report/filters.js";
+import { getSiteUrl } from "../lib/site-url.js";
 import type { CheckResult, Finding } from "../lib/scanner/types.js";
 
 let failures = 0;
@@ -292,6 +293,66 @@ check(
   ).toString(),
   "ref=abc&sev=high&passed=0",
 );
+
+// ---------------------------------------------------------------------------
+console.log("\nsite URL validation");
+
+function siteUrlWith(env: Record<string, string | undefined>): string | null {
+  delete process.env.NEXT_PUBLIC_SITE_URL;
+  delete process.env.VERCEL_PROJECT_PRODUCTION_URL;
+  for (const [key, value] of Object.entries(env)) {
+    if (value !== undefined) process.env[key] = value;
+  }
+  return getSiteUrl()?.origin ?? null;
+}
+
+check("unset → null, so metadataBase stays unset", siteUrlWith({}), null);
+check(
+  "https origin is accepted",
+  siteUrlWith({ NEXT_PUBLIC_SITE_URL: "https://surfaced.app" }),
+  "https://surfaced.app",
+);
+check(
+  "the PARSED origin is returned, not the raw string",
+  siteUrlWith({ NEXT_PUBLIC_SITE_URL: "https://surfaced.app/some/path?x=1" }),
+  "https://surfaced.app",
+);
+check("http is rejected", siteUrlWith({ NEXT_PUBLIC_SITE_URL: "http://surfaced.app" }), null);
+check("garbage is rejected", siteUrlWith({ NEXT_PUBLIC_SITE_URL: "not a url" }), null);
+check(
+  "embedded credentials are rejected",
+  siteUrlWith({ NEXT_PUBLIC_SITE_URL: "https://user:pw@surfaced.app" }),
+  null,
+);
+check(
+  "a bare Vercel hostname is accepted",
+  siteUrlWith({ VERCEL_PROJECT_PRODUCTION_URL: "surfaced.vercel.app" }),
+  "https://surfaced.vercel.app",
+);
+
+// The reason the bare hostname is pattern-checked BEFORE a scheme is attached.
+// "https://" + "evil.com/@surfaced.app" parses to a URL whose host is evil.com
+// while reading as though it were surfaced.app.
+check(
+  "a Vercel value carrying a path is rejected",
+  siteUrlWith({ VERCEL_PROJECT_PRODUCTION_URL: "evil.com/@surfaced.app" }),
+  null,
+);
+check(
+  "a Vercel value carrying credentials is rejected",
+  siteUrlWith({ VERCEL_PROJECT_PRODUCTION_URL: "a:b@evil.com" }),
+  null,
+);
+check(
+  "an explicit site URL wins over the platform fallback",
+  siteUrlWith({
+    NEXT_PUBLIC_SITE_URL: "https://surfaced.app",
+    VERCEL_PROJECT_PRODUCTION_URL: "other.vercel.app",
+  }),
+  "https://surfaced.app",
+);
+
+siteUrlWith({});
 
 // ---------------------------------------------------------------------------
 const base = process.argv[2];

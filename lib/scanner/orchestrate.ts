@@ -30,8 +30,12 @@ import {
 
 /** Per-check wall-time budget. */
 const DEFAULT_CHECK_TIMEOUT_MS = 8_000;
-/** crt.sh is routinely the slowest dependency, so it gets more room. */
-const CT_TIMEOUT_MS = 12_000;
+/**
+ * crt.sh is routinely the slowest dependency and intermittently returns 502,
+ * so it gets the most room — and ct.ts spends this same budget across its one
+ * retry rather than being granted extra. TOTAL_TIMEOUT_MS still caps it.
+ */
+const CT_TIMEOUT_MS = 20_000;
 /** Hard ceiling for the whole scan, regardless of individual budgets. */
 const TOTAL_TIMEOUT_MS = 20_000;
 
